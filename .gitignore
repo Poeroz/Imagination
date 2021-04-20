@@ -1,2 +1,4 @@
 multi30k-dataset
 data-bin
+logs/
+checkpoints
