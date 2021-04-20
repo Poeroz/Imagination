@@ -1029,6 +1029,9 @@ def transformer_iwslt_de_en(args):
 def transformer_wmt_en_de(args):
     base_architecture(args)
 
+@register_model_architecture("transformer", "transformer_multi30k_en_de")
+def transformer_multi30k_en_de(args):
+    base_architecture(args)
 
 # parameters used in the "Attention Is All You Need" paper (Vaswani et al., 2017)
 @register_model_architecture("transformer", "transformer_vaswani_wmt_en_de_big")
