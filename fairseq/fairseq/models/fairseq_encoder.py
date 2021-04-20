@@ -30,7 +30,7 @@ class FairseqEncoder(nn.Module):
         super().__init__()
         self.dictionary = dictionary
 
-    def forward(self, src_tokens, src_lengths=None, **kwargs):
+    def forward(self, src_ids, src_tokens, src_lengths=None, **kwargs):
         """
         Args:
             src_tokens (LongTensor): tokens in the source language of shape
@@ -40,7 +40,7 @@ class FairseqEncoder(nn.Module):
         """
         raise NotImplementedError
 
-    def forward_torchscript(self, net_input: Dict[str, Tensor]):
+    def forward_torchscript(self, src_ids, net_input: Dict[str, Tensor]):
         """A TorchScript-compatible version of forward.
 
         Encoders which use additional arguments may want to override
@@ -48,18 +48,19 @@ class FairseqEncoder(nn.Module):
         """
         if torch.jit.is_scripting():
             return self.forward(
+                src_ids=src_ids,
                 src_tokens=net_input["src_tokens"],
                 src_lengths=net_input["src_lengths"],
             )
         else:
-            return self.forward_non_torchscript(net_input)
+            return self.forward_non_torchscript(src_ids, net_input)
 
     @torch.jit.unused
-    def forward_non_torchscript(self, net_input: Dict[str, Tensor]):
+    def forward_non_torchscript(self, src_ids, net_input: Dict[str, Tensor]):
         encoder_input = {
             k: v for k, v in net_input.items() if k != "prev_output_tokens"
         }
-        return self.forward(**encoder_input)
+        return self.forward(src_ids, **encoder_input)
 
     def reorder_encoder_out(self, encoder_out, new_order):
         """

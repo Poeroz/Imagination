@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import numpy as np
 from fairseq import utils
 from fairseq.models import (
     FairseqEncoder,
@@ -365,7 +366,7 @@ class TransformerEncoder(FairseqEncoder):
             self.layer_norm = None
 
         # image features
-        image_embedding_file = getattr(args, 'image_embedding_file', 'features_resnet50/train-resnet50-avgpool.npy')
+        image_embedding_file = getattr(args, 'image_embedding_file', 'multi30k-dataset/data/features_resnet50/train-resnet50-avgpool.npy')
         image_embedding_weights = np.load(image_embedding_file)
         self.image_embeddings = nn.Embedding.from_pretrained(torch.FloatTensor(image_embedding_weights), freeze=True)
         # imaginet decoder
@@ -392,7 +393,7 @@ class TransformerEncoder(FairseqEncoder):
             x = self.quant_noise(x)
         return x, embed
 
-    def calc_grounding_loss(self, lang_output, src_ids, margin=0.1):
+    def calc_grounding_loss(self, src_ids, lang_output, margin=0.1):
         visn_output = self.image_embeddings(src_ids)
         batch_size, dim = lang_output.shape
         
@@ -411,7 +412,7 @@ class TransformerEncoder(FairseqEncoder):
         pos_loss = hinge(margin - true_pos_score + false_pos_score)
         neg_loss = hinge(margin - true_neg_score + false_neg_score)
 
-        return (pos_loss.sum() + neg_loss.sum()) / batch_size
+        return pos_loss.sum() + neg_loss.sum()
 
     def forward(
         self,
@@ -465,7 +466,7 @@ class TransformerEncoder(FairseqEncoder):
             x = self.layer_norm(x)
 
         # imaginet decoder
-        encoder_img_out = nn.functional.tanh(self.enc2img(torch.mean(x, dim=0)))
+        encoder_img_out = torch.tanh(self.enc2img(torch.mean(x, dim=0)))
         margin_loss = self.calc_grounding_loss(src_ids, encoder_img_out)
 
         return EncoderOut(

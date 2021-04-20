@@ -234,8 +234,9 @@ def validate_and_save(cfg: DictConfig, trainer: Trainer, task: tasks.FairseqTask
     num_updates = trainer.get_num_updates()
     max_update = cfg.optimization.max_update or math.inf
     do_save = (
-        (end_of_epoch and epoch_itr.epoch % cfg.checkpoint.save_interval == 0)
-        or num_updates >= max_update
+        # (end_of_epoch and epoch_itr.epoch % cfg.checkpoint.save_interval == 0)
+        # or num_updates >= max_update
+        num_updates >= max_update
         or (
             cfg.checkpoint.save_interval_updates > 0
             and num_updates > 0
@@ -244,14 +245,15 @@ def validate_and_save(cfg: DictConfig, trainer: Trainer, task: tasks.FairseqTask
         )
     )
     do_validate = (
-        (not end_of_epoch and do_save)  # validate during mid-epoch saves
-        or (end_of_epoch and epoch_itr.epoch % cfg.dataset.validate_interval == 0)
-        or num_updates >= max_update
-        or (
-            cfg.dataset.validate_interval_updates > 0
-            and num_updates > 0
-            and num_updates % cfg.dataset.validate_interval_updates == 0
-        )
+        # (not end_of_epoch and do_save)  # validate during mid-epoch saves
+        # or (end_of_epoch and epoch_itr.epoch % cfg.dataset.validate_interval == 0)
+        # or num_updates >= max_update
+        # or (
+        #     cfg.dataset.validate_interval_updates > 0
+        #     and num_updates > 0
+        #     and num_updates % cfg.dataset.validate_interval_updates == 0
+        # )
+        do_save
     ) and not cfg.dataset.disable_validation
 
     # Validate
