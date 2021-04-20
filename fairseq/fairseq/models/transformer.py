@@ -172,6 +172,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
                             help='block size of quantization noise at training time')
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
+        parser.add_argument('--image-embedding-file', type=str, metavar='STR',
+                            help='image embedding filepath')
         # fmt: on
 
     @classmethod
@@ -252,6 +254,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
     # Current workaround is to add union of all arguments in child classes.
     def forward(
         self,
+        src_ids,
         src_tokens,
         src_lengths,
         prev_output_tokens,
@@ -266,8 +269,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         Copied from the base class, but without ``**kwargs``,
         which are not supported by TorchScript.
         """
-        encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+        encoder_out, margin_loss = self.encoder(
+            src_ids, src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -278,7 +281,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_lengths=src_lengths,
             return_all_hiddens=return_all_hiddens,
         )
-        return decoder_out
+        return decoder_out, margin_loss
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
@@ -361,6 +364,15 @@ class TransformerEncoder(FairseqEncoder):
         else:
             self.layer_norm = None
 
+        # image features
+        image_embedding_file = getattr(args, 'image_embedding_file', 'features_resnet50/train-resnet50-avgpool.npy')
+        image_embedding_weights = np.load(image_embedding_file)
+        self.image_embeddings = nn.Embedding.from_pretrained(torch.FloatTensor(image_embedding_weights), freeze=True)
+        # imaginet decoder
+        self.enc2img = nn.Linear(embed_dim, 2048)
+        # cosine distance
+        self.cos = nn.CosineSimilarity(dim=-1)
+
     def build_encoder_layer(self, args):
         return TransformerEncoderLayer(args)
 
@@ -380,8 +392,30 @@ class TransformerEncoder(FairseqEncoder):
             x = self.quant_noise(x)
         return x, embed
 
+    def calc_grounding_loss(self, lang_output, src_ids, margin=0.1):
+        visn_output = self.image_embeddings(src_ids)
+        batch_size, dim = lang_output.shape
+        
+        assert batch_size % 2 == 0 and batch_size == visn_output.shape[0]
+        assert margin > 0.
+
+        half_batch_size = batch_size // 2
+        pos_lang, neg_lang = torch.split(lang_output, half_batch_size, dim=0)
+        pos_visn, neg_visn = torch.split(visn_output, half_batch_size, dim=0)
+
+        true_pos_score = self.cos(pos_lang, pos_visn)
+        true_neg_score = self.cos(neg_lang, neg_visn)
+        false_pos_score = self.cos(pos_lang, neg_visn)
+        false_neg_score = self.cos(neg_lang, pos_visn)
+
+        pos_loss = hinge(margin - true_pos_score + false_pos_score)
+        neg_loss = hinge(margin - true_neg_score + false_neg_score)
+
+        return (pos_loss.sum() + neg_loss.sum()) / batch_size
+
     def forward(
         self,
+        src_ids,
         src_tokens,
         src_lengths,
         return_all_hiddens: bool = False,
@@ -430,6 +464,10 @@ class TransformerEncoder(FairseqEncoder):
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
+        # imaginet decoder
+        encoder_img_out = nn.functional.tanh(self.enc2img(torch.mean(x, dim=0)))
+        margin_loss = self.calc_grounding_loss(src_ids, encoder_img_out)
+
         return EncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
@@ -437,7 +475,7 @@ class TransformerEncoder(FairseqEncoder):
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
-        )
+        ), margin_loss
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: EncoderOut, new_order):
@@ -917,6 +955,9 @@ def Linear(in_features, out_features, bias=True):
         nn.init.constant_(m.bias, 0.0)
     return m
 
+
+def hinge(x):
+    return torch.clamp(x, min=0.)
 
 @register_model_architecture("transformer", "transformer")
 def base_architecture(args):
