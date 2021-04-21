@@ -6,7 +6,7 @@ fairseq-train data-bin/multi30k_en_fr --task translation \
 --lr 0.0007 --min-lr 1e-09 \
 --criterion label_smoothed_cross_entropy --label-smoothing 0.1 --weight-decay 0.0 \
 --max-tokens 4096 \
---update-freq 8 --no-progress-bar --log-format json --log-interval 100 \
+--update-freq 2 --no-progress-bar --log-format json --log-interval 100 \
 --save-interval-updates 1000 \
 --keep-last-epochs 5 --keep-interval-updates 10 \
 --save-dir checkpoints/$exp \
