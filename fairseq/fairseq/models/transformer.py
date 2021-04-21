@@ -397,8 +397,8 @@ class TransformerEncoder(FairseqEncoder):
         visn_output = self.image_embeddings(src_ids)
         batch_size, dim = lang_output.shape
         
-        assert batch_size % 2 == 0 and batch_size == visn_output.shape[0]
-        assert margin > 0.
+        if batch_size % 2 != 0:
+            return 0.0
 
         half_batch_size = batch_size // 2
         pos_lang, neg_lang = torch.split(lang_output, half_batch_size, dim=0)
@@ -1032,6 +1032,10 @@ def transformer_wmt_en_de(args):
 
 @register_model_architecture("transformer", "transformer_multi30k_en_de")
 def transformer_multi30k_en_de(args):
+    base_architecture(args)
+
+@register_model_architecture("transformer", "transformer_multi30k_en_fr")
+def transformer_multi30k_en_fr(args):
     base_architecture(args)
 
 # parameters used in the "Attention Is All You Need" paper (Vaswani et al., 2017)
